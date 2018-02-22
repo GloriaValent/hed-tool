@@ -10,11 +10,11 @@
     apt:
       pkg: octave
       state: build-dep
-  - name: download octave
-    get_url: url={{ octave_url }} dest=/tmp/octave.tar.xz
 
   - name: extract tarball
-    command: tar -C /tmp -xf /tmp/octave.tar.xz
+    unarchive:
+      src: octave-4.2.1.tar.xz
+      dest: /tmp
       
   - name: configure octave
     command: chdir=/tmp/octave-4.2.1 ./configure --prefix=/opt/octave
