@@ -1,5 +1,5 @@
 ---
-- hosts: 192.168.121.91
+- hosts: octave-hed
   remote_user: vagrant
   become: yes
 
