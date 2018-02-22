@@ -1,0 +1,53 @@
+---
+- hosts: octave-hed
+  remote_user: vagrant
+  become: yes
+  vars:
+    toolbox_url: https://pdollar.github.io/toolbox/archive/piotr_toolbox.zip
+    mex_url: https://raw.githubusercontent.com/pdollar/edges/master/private/edgesNmsMex.cpp
+
+  tasks:
+    - name: extract toolbox
+      unarchive:
+        src: piotr_toolbox.zip
+        dest: /opt/octave/
+
+    - name: mkdir mex dir
+      file: path=/opt/octave/mex state=directory mode=0755
+
+    - name: generate octave path
+      command: /opt/octave/bin/octave --eval "addpath(genpath('/opt/octave/toolbox')); savepath('/opt/octave/path.toolbox');"
+
+    - name: create wrappers.hpp
+      shell: |
+        mv /opt/octave/toolbox/channels/private/wrappers.hpp /opt/octave/toolbox/channels/private/wrappers.hpp.orig
+        echo "#include <stdlib.h>" > /opt/octave/toolbox/channels/private/wrappers.hpp
+        cat /opt/octave/toolbox/channels/private/wrappers.hpp.orig >> /opt/octave/toolbox/channels/private/wrappers.hpp
+
+    - name: generate mex files
+      command: /opt/octave/bin/mkoctfile --mex -DMATLAB_MEX_FILE -o /opt/octave/mex/"{{ item }}".mex /opt/octave/toolbox/channels/private/"{{ item }}".cpp
+      with_items:
+        - convConst
+        - gradientMex
+        - imPadMex
+        - imResampleMex
+        - rgbConvertMex
+
+    - name: generate mex path
+      command: /opt/octave/bin/octave --eval "addpath('/opt/octave/mex'); savepath('/opt/octave/path.mex');"
+
+    - name: copy edgesNmsMex
+      copy: src=edgesNmsMex.cpp dest=/opt/octave/mex
+
+    - name: process edgesNmsMex
+      command: chdir=/opt/octave/mex /opt/octave/bin/octave --eval "mex edgesNmsMex.cpp"
+
+    - name: install image package for octave
+      command: /opt/octave/bin/octave --eval "pkg install -global -forge image"
+
+    - name: update startup file for octave
+      shell: |
+        cat /opt/octave/path.toolbox /opt/octave/path.mex > /opt/octave/path.all
+        echo "pkg load image;" >> /opt/octave/path.all
+        mv /opt/octave/share/octave/site/m/startup/octaverc /opt/octave/share/octave/site/m/startup/octaverc.orig
+        cat /opt/octave/share/octave/site/m/startup/octaverc.orig /opt/octave/path.all > /opt/octave/share/octave/site/m/startup/octaverc

@@ -1,0 +1,11 @@
+---
+- hosts: 192.168.121.91
+  remote_user: vagrant
+  become: yes
+
+
+  tasks:
+  - name: insert apt source line
+    apt_repository:
+      repo: deb-src http://deb.debian.org/debian/ stretch main
+      state: present
