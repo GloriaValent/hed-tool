@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: UTF-8 -*-
+# -*- coding: utf-8 -*-
 # File: hed.py
 # Author: Yuxin Wu <ppwwyyxxc@gmail.com>
 
@@ -8,7 +8,13 @@ import tensorflow as tf
 import argparse
 from six.moves import zip
 import os
-
+import numpy as np
+from PIL import Image
+import tempfile
+import subprocess
+import threading
+import time
+import multiprocessing
 
 from tensorpack import *
 from tensorpack.dataflow import dataset
@@ -212,8 +218,51 @@ def get_config():
         max_epoch=100,
     )
 
+def post_edge(fuse):
+    import scipy.io
+    with tempfile.NamedTemporaryFile(suffix=".png") as png_file, tempfile.NamedTemporaryFile(suffix=".mat") as mat_file:
+        scipy.io.savemat(mat_file.name, {"input": fuse})
+        octave_code = r"""
+E = 1-load(input_path).input;
+# E = imresize(E, [image_width,image_width]);
+E = 1 - E;
+E = single(E);
+[Ox, Oy] = gradient(convTri(E, 4), 1);
+[Oxx, ~] = gradient(Ox, 1);
+[Oxy, Oyy] = gradient(Oy, 1);
+O = mod(atan(Oyy .* sign(-Oxy) ./ (Oxx + 1e-5)), pi);
+E = edgesNmsMex(E, O, 1, 5, 1.01, 1);
+E = double(E >= max(eps, threshold));
+E = bwmorph(E, 'thin', inf);
+E = bwareaopen(E, small_edge);
+E = 1 - E;
+E = uint8(E * 255);
+imwrite(E, output_path);
+"""
 
-def run(model_path, image_path, output):
+        config = dict(
+            input_path="'%s'" % mat_file.name,
+            output_path="'%s'" % png_file.name,
+            image_width=256,
+            threshold=25.0/255.0,
+            small_edge=5,
+        )
+
+        args = ["/opt/octave/bin/octave"] #
+        for k, v in config.items():
+            args.extend(["--eval", "%s=%s;" % (k, v)])
+
+        args.extend(["--eval", octave_code])
+        try:
+            subprocess.check_output(args, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print("octave failed")
+            print("returncode:", e.returncode)
+            print("output:", e.output)
+            raise
+        return cv2.imread(png_file.name)
+
+def run(model_path, image_path, output, postprocess=True):
     pred_config = PredictConfig(
         model=Model(),
         session_init=get_model_loader(model_path),
@@ -225,36 +274,61 @@ def run(model_path, image_path, output):
     im = cv2.resize(
         im, (im.shape[1] // 16 * 16, im.shape[0] // 16 * 16)
     )[None, :, :, :].astype('float32')
-    outputs = predictor(im)
-    if output is None:
-        for k in range(6):
-            pred = outputs[k][0]
-            cv2.imwrite("out{}.png".format(
-                '-fused' if k == 5 else str(k + 1)), pred * 255)
+    src = im * 255
+    src -= np.array((104.00698793,116.66876762,122.67891434))
+    outputs = predictor(src)
+    pred = outputs[5][0]
+    # cv2.imwrite(output, pred * 255) # raw output
+    if postprocess:
+        img = post_edge(pred)
+        cv2.imwrite(output, img)
     else:
-        pred = outputs[5][0]
-        cv2.imwrite(output, pred * 255)
+        img = pred * 255
+        img = img.astype(np.uint8)
+        cv2.imwrite(output, img)
 
+def rundir(model_path, image_path, output):
+    pred_config = PredictConfig(
+        model=Model(),
+        session_init=get_model_loader(model_path),
+        input_names=['image'],
+        output_names=['output' + str(k) for k in range(1, 7)])
+    predictor = OfflinePredictor(pred_config)
+    for fname in os.listdir(image_path):
+        if fname.endswith(".png") or fname.endswith(".jpg"):
+            print("process %s" % fname)
+            input_path = os.path.join(image_path, fname)
+            im = cv2.imread(input_path)
+            im = cv2.resize(
+                im, (im.shape[1] // 16 * 16, im.shape[0] // 16 * 16)
+            )[None, :, :, :].astype('float32')
+            src = im * 255
+            src -= np.array((104.00698793,116.66876762,122.67891434))
+            outputs = predictor(src)
+            pred = outputs[5][0]
+            img = post_edge(pred)
+            out_path = os.path.join(output, fname)
+            os.makedirs(output, exist_ok=True)
+            cv2.imwrite(out_path, img)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.')
-    parser.add_argument('--load', help='load model')
-    parser.add_argument('--view', help='view dataset', action='store_true')
-    parser.add_argument('--run', help='run model on images')
-    parser.add_argument('--output', help='fused output filename. default to out-fused.png')
+    parser.add_argument('--load', help='load model', default='/opt/data/hed/model/model-100000')
+    parser.add_argument('--output', '-o', help='fused output filename. default to out-fused.png', default='out-fused.png')
+    parser.add_argument('--dir', '-r', help='specify directory instead of image',
+                        default=False, action='store_true')
+    parser.add_argument('--skip-postprocess', '-s', help='disable post process',
+                        default=False, action='store_true')
+    parser.add_argument('input', help='run model on images')
     args = parser.parse_args()
+
     if args.gpu:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-
-    if args.view:
-        view_data()
-    elif args.run:
-        run(args.load, args.run, args.output)
     else:
-        config = get_config()
-        if args.load:
-            config.session_init = get_model_loader(args.load)
-        launch_train_with_config(
-            config,
-            SyncMultiGPUTrainer(max(get_nr_gpu(), 1)))
+        os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
+
+    if args.dir is False:
+        run(args.load, args.input, args.output, not args.skip_postprocess)
+    else:
+        rundir(args.load, args.input, args.output)
