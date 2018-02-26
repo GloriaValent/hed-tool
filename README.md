@@ -16,7 +16,7 @@ HEDの出力をそのまま用いるのではなく、その結果をさらに�
 
 [GNU Octave](https://www.gnu.org/software/octave/)と[Piotr's Computer Vision Matlab Toolbox](https://pdollar.github.io/toolbox/)他が必要です。
 
-Debian/Ubuntu向けにansible playbookを用意してあります。それ以外の環境については、[Qiitaの解説記事](https://qiita.com/knok/items/c3bbff0597b3158ec31c#piotr-toolbox%E3%81%AE%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%AB]あるいは[pix2pix-tensorflowのDockerfile](https://github.com/affinelayer/pix2pix-tensorflow/blob/master/docker/Dockerfile)を参考にしてください。
+Debian/Ubuntu向けにansible playbookを用意してあります。それ以外の環境については、[Qiitaの解説記事](https://qiita.com/knok/items/c3bbff0597b3158ec31c#piotr-toolbox%E3%81%AE%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%AB)あるいは[pix2pix-tensorflowのDockerfile](https://github.com/affinelayer/pix2pix-tensorflow/blob/master/docker/Dockerfile)を参考にしてください。
 
 ### HED事前訓練モデル
 
