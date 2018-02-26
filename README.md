@@ -10,7 +10,7 @@ HEDの出力をそのまま用いるのではなく、その結果をさらに�
 
 * TensorFlow
 * Tensorpack
-* Octave
+* GNU Octave
 
 ## インストール方法
 
